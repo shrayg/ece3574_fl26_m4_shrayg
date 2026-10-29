@@ -4,54 +4,36 @@ Due Wed Oct 28, 11:59 pm. See specification Section 7.
 
 ## 1. Components and threads
 
-- GUI thread: `MainWindow` (all slots plus `startBuild()`, `pollBuild()`, `finishBuild()`), its `QTimer pollTimer_` (20 ms, only runs while a build is alive), and `BuildJob` (new non-Qt class: `start()`, `isDone()`, `takeResult()`, `cancel()`, destructor).
-- Worker `std::thread`: `runBuild()`, which sleeps the delay per document in slices and then calls `ProcessingCore::rebuild()` on its own new core.
+The GUI thread runs `MainWindow` (all the slots plus new `startBuild()`, `pollBuild()`, and `finishBuild()`), its `QTimer pollTimer_`, and a new non-Qt class `BuildJob` with `start()`, `isDone()`, `takeResult()`, `cancel()`, and a destructor. The timer ticks every 20 ms, but only while a build is alive.
 
-The worker never touches Qt or `MainWindow`. It gets a Workspace copy, the delay, and the job's `std::atomic<bool> cancelled_`. It sends back a `std::unique_ptr<ProcessingCore>` (or an exception) through a `std::promise`. The GUI checks the `std::future` with `wait_for(0)`, so it never blocks. The only shared data is the atomic flag and the promise/future state.
+The worker `std::thread` runs only `runBuild()`. It sleeps the delay for each document in small slices, then calls `ProcessingCore::rebuild()` on its own new core.
+
+The worker never touches Qt or `MainWindow`. It gets a copy of the Workspace, the delay, and the job's `std::atomic<bool> cancelled_`. It sends back a `std::unique_ptr<ProcessingCore>` (or an exception) through a `std::promise`. The GUI checks the matching `std::future` with `wait_for(0)`, so it never blocks. The only data both threads touch is the atomic flag and the promise/future state.
 
 ## 2. Corpus states
 
-States: `NotBuilt`, `Building`, `Current`, `OutOfDate`, `Failed`. `MainWindow` also keeps `workspaceVersion_`, a counter that goes up on every add and every Reset.
+The states are `NotBuilt`, `Building`, `Current`, `OutOfDate`, and `Failed`. `MainWindow` also keeps `workspaceVersion_`, a counter that goes up on every add and every Reset.
 
-| From | Event | To |
-|---|---|---|
-| any but Building | Build clicked | Building (job remembers the version) |
-| Building | job done, versions match | Current, show "N chunks" |
-| Building | job threw | Failed, show the error |
-| Building | document added | OutOfDate, job cancelled |
-| Current | document added | OutOfDate |
-| any | Reset | NotBuilt, job cancelled |
+Clicking Build from any state except `Building` moves to `Building`, and the job saves the current version. When the job finishes and its version matches, the state goes to `Current` and the chunk count is shown. If the job threw, it goes to `Failed` and the error is shown. Adding a document during `Building` cancels the job and goes to `OutOfDate`, and adding one while `Current` also goes to `OutOfDate`. Reset from any state cancels any job and goes to `NotBuilt`.
 
-Search, Inspect, and Context are enabled only in `Current`. Build is enabled when there are documents and no job thread is alive, so there's only ever one build thread.
+Search, Inspect, and Context are only enabled in `Current`. Build is enabled when there are documents and no job thread is alive, so there's never more than one build thread.
 
 ## 3. Threatening sequences
 
-- **Add during a build (R2):** the result is stale, so the version check in `finishBuild()` throws it away.
-- **Reset then add during a build (R2):** same doc count but a different workspace, which is why I compare versions and not counts.
-- **Build clicked twice (R2, R4):** Build is disabled while a job is alive.
-- **Build throws (R3):** `runBuild()` catches it and calls `set_exception`. `finishBuild()` gets it from `future.get()`, shows "Build failed: ...", and goes to `Failed`. After that you can build again.
-- **Exit or close mid-build (R1, R4):** `~BuildJob()` sets the flag and joins. The delay checks the flag every 10 ms, so the join is quick.
-- **Build finishes while the Exit dialog is open (R2):** the timer still fires inside the dialog, so the result is applied normally and "No" changes nothing.
-- **Many builds (R4):** each job is joined in `takeResult()` before the next one can start, and cores are `unique_ptr`s.
-- **Delay changed mid-build:** the delay is copied at `start()`, so only the next build uses it.
+If a document is added during a build, the result is stale, and the version check in `finishBuild()` throws it away (R2). If Reset and then an add both happen during a build, the doc count can be the same while the workspace is different. That's why I compare versions instead of counts (R2). Clicking Build twice can't happen, because the button is disabled while a job is alive (R2, R4).
 
-**Walkthrough A, Reset then add mid-build:**
-1. Build starts at version 4, and the job saves 4.
-2. Reset clears everything, sets the version to 5, cancels the job, and moves to `NotBuilt`.
-3. Adding a document sets the version to 6 and the state to `OutOfDate`.
-4. The worker sees the flag and returns early. `pollBuild()` sees the future is ready.
-5. `finishBuild()` compares 4 to 6, discards the core, and stays `OutOfDate`. Build is enabled again.
+If the build throws, `runBuild()` catches it and calls `set_exception`. `finishBuild()` gets it from `future.get()`, shows "Build failed: ...", and goes to `Failed`. After that you can build again (R3).
 
-**Walkthrough B, Exit during a 30 s build:**
-1. Exit, then the callback, then Yes calls `QApplication::quit()`.
-2. `main()` returns, so `~MainWindow` destroys `buildJob_`.
-3. `~BuildJob()` sets `cancelled_`. The worker sees it within 10 ms and returns.
-4. `join()` returns and the app exits clean, with no detached thread.
+On Exit or close mid-build, `~BuildJob()` sets the flag and joins. The delay checks the flag every 10 ms, so the join is quick (R1, R4). If a build finishes while the Exit dialog is open, the timer still fires inside the dialog, so the result is applied normally and "No" changes nothing (R2). With many builds in a row, each job is joined in `takeResult()` before the next one can start, and cores are `unique_ptr`s, so nothing piles up (R4). If the delay is changed mid-build, it doesn't matter, because it's copied at `start()`.
+
+Walkthrough A, Reset then add mid-build. The build starts at version 4, and the job saves 4. Reset clears everything, sets the version to 5, cancels the job, and goes to `NotBuilt`. Adding a document sets the version to 6 and the state to `OutOfDate`. The worker sees the flag and returns early, and `pollBuild()` sees that the future is ready. `finishBuild()` compares 4 to 6, throws the core away, and stays `OutOfDate`. Build is enabled again.
+
+Walkthrough B, Exit during a 30 s build. The user clicks Exit and says Yes, which calls `QApplication::quit()`. `main()` returns, so `~MainWindow` destroys `buildJob_`. `~BuildJob()` sets `cancelled_`, and the worker sees it within 10 ms and returns. `join()` returns and the app exits clean, with no detached thread.
 
 ## 4. Ownership of one built corpus
 
-`runBuild()` makes it with `std::make_unique<ProcessingCore>()` and rebuilds it from its own Workspace copy. `set_value(std::move(core))` moves it into the future's shared state. `takeResult()` joins and moves it out with `future.get()`. If `finishBuild()` accepts it, `processingCore_ = std::move(core)`, and the old core is freed right there. If it's rejected, it's freed when `finishBuild()` returns. An accepted core lives until the next accepted build, Reset, or `~MainWindow`.
+`runBuild()` makes the core with `std::make_unique<ProcessingCore>()` and rebuilds it from its own Workspace copy. `set_value(std::move(core))` moves it into the future's shared state. `takeResult()` joins and moves it out with `future.get()`. If `finishBuild()` accepts it, `processingCore_ = std::move(core)` frees the old core right there. If it's rejected, it's freed when `finishBuild()` returns. An accepted core lives until the next accepted build, Reset, or `~MainWindow`.
 
 ## 5. Rejected alternative
 
-I considered having the worker call `QMetaObject::invokeMethod(mainWindow, ...)` when it finishes. The worker would then need a pointer to `MainWindow`, which could be mid-destruction at exit. Polling a future with a `QTimer` keeps the worker free of Qt, and the GUI decides when to take the result.
+I thought about having the worker call `QMetaObject::invokeMethod(mainWindow, ...)` when it finishes. The worker would then need a pointer to `MainWindow`, which could be mid-destruction at exit. Polling a future with a `QTimer` keeps the worker free of Qt, and the GUI decides when to take the result.
