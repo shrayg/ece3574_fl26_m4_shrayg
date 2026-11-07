@@ -26,7 +26,7 @@ target_include_directories(aiws_m2 PUBLIC include)
 target_link_libraries(aiws_m2 PUBLIC Threads::Threads)
 target_compile_options(aiws_m2 PRIVATE -Wall -Wextra -Wpedantic)
 
-# Socket helpers and the message format, shared by the app and aiws_send.
+# socket helpers and the message format, shared by the app and aiws_send
 add_library(aiws_ipc STATIC
     src/remote_protocol.cpp
     include/aiws/ipc/remote_protocol.hpp
