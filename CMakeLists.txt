@@ -69,5 +69,9 @@ target_compile_options(aiws_send PRIVATE -Wall -Wextra -Wpedantic)
 enable_testing()
 add_executable(student_tests tests/student_tests.cpp)
 target_link_libraries(student_tests PRIVATE aiws_app Qt6::Test)
+target_compile_definitions(student_tests PRIVATE
+    AIWS_SEND_PATH="$<TARGET_FILE:aiws_send>"
+    AIWS_APP_PATH="$<TARGET_FILE:ai_workspace_m4>")
+add_dependencies(student_tests aiws_send ai_workspace_m4)
 add_test(NAME student_tests COMMAND student_tests)
 set_tests_properties(student_tests PROPERTIES TIMEOUT 60 ENVIRONMENT QT_QPA_PLATFORM=offscreen)
