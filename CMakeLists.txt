@@ -26,9 +26,18 @@ target_include_directories(aiws_m2 PUBLIC include)
 target_link_libraries(aiws_m2 PUBLIC Threads::Threads)
 target_compile_options(aiws_m2 PRIVATE -Wall -Wextra -Wpedantic)
 
+# Socket helpers and the message format, shared by the app and aiws_send.
+add_library(aiws_ipc STATIC
+    src/remote_protocol.cpp
+    include/aiws/ipc/remote_protocol.hpp
+)
+target_include_directories(aiws_ipc PUBLIC include)
+target_compile_options(aiws_ipc PRIVATE -Wall -Wextra -Wpedantic)
+
 # Everything except main(), so tests can link the application code.
 add_library(aiws_app STATIC
     src/build_job.cpp
+    src/remote_add_server.cpp
     src/main_window.cpp
     src/workspace_widget.cpp
     src/search_widget.cpp
@@ -36,6 +45,7 @@ add_library(aiws_app STATIC
     src/term_inspector_widget.cpp
     src/search_result_model.cpp
     include/aiws/build_job.hpp
+    include/aiws/ipc/remote_add_server.hpp
     include/aiws/gui/main_window.hpp
     include/aiws/gui/resettable.hpp
     include/aiws/gui/workspace_widget.hpp
@@ -45,12 +55,16 @@ add_library(aiws_app STATIC
     include/aiws/gui/search_result_model.hpp
 )
 target_include_directories(aiws_app PUBLIC include)
-target_link_libraries(aiws_app PUBLIC aiws_m2 Qt6::Widgets)
+target_link_libraries(aiws_app PUBLIC aiws_m2 aiws_ipc Qt6::Widgets)
 target_compile_options(aiws_app PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(ai_workspace_m4 src/main.cpp)
 target_link_libraries(ai_workspace_m4 PRIVATE aiws_app)
 target_compile_options(ai_workspace_m4 PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(aiws_send tools/aiws_send.cpp)
+target_link_libraries(aiws_send PRIVATE aiws_ipc)
+target_compile_options(aiws_send PRIVATE -Wall -Wextra -Wpedantic)
 
 enable_testing()
 add_executable(student_tests tests/student_tests.cpp)
