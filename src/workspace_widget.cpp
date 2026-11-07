@@ -32,6 +32,7 @@ WorkspaceWidget::WorkspaceWidget(QWidget* parent) : QWidget(parent) {
     document_list_->setSelectionMode(QAbstractItemView::SingleSelection);
 
     corpus_status_label_ = new QLabel(kNotBuilt, workspacePanel);
+    corpus_status_label_->setObjectName("corpusStatusLabel");
     corpus_status_label_->setStyleSheet("font-weight: bold;");
 
     auto* buttonRow = new QHBoxLayout;

@@ -13,8 +13,10 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <utility>
@@ -23,6 +25,8 @@
 namespace aiws::gui {
 
 namespace {
+
+constexpr int kPollIntervalMs = 20;
 
 QString countText(std::size_t count, const QString& word) {
     return QString("%1 %2%3").arg(count).arg(word).arg(count == 1 ? "" : "s");
@@ -68,6 +72,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* statusTitle = new QLabel("Current status:", central);
     statusTitle->setStyleSheet("font-weight: bold;");
     status_label_ = new QLabel(central);
+    status_label_->setObjectName("statusLabel");
 
     reset_button_ = new QPushButton("Reset", central);
     reset_button_->setStyleSheet(
@@ -121,6 +126,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(exit_button_, &QPushButton::clicked,
             this, &MainWindow::exit_application);
 
+    pollTimer_ = new QTimer(this);
+    pollTimer_->setInterval(kPollIntervalMs);
+    connect(pollTimer_, &QTimer::timeout, this, &MainWindow::pollBuild);
+
     status_label_->setText("Ready");
     update_action_states();
 }
@@ -129,13 +138,24 @@ void MainWindow::set_exit_callback(ExitCallback callback) noexcept {
     exit_callback_ = callback;
 }
 
+void MainWindow::set_build_delay_ms(int ms_per_document) {
+    buildDelayMs_ = std::max(0, ms_per_document);
+}
+
+void MainWindow::set_core_factory(BuildJob::CoreFactory factory) noexcept {
+    coreFactory_ = factory;
+}
+
 void MainWindow::add_document() {
     const QString path = QFileDialog::getOpenFileName(
         this, "Add Document", QString(), "Text files (*.txt);;All files (*)");
     if (path.isEmpty()) {
         return;
     }
+    add_document_file(path);
+}
 
+bool MainWindow::add_document_file(const QString& path) {
     const QFileInfo info(path);
     const QString documentId = info.absoluteFilePath();
     const QString title = info.fileName();
@@ -143,16 +163,21 @@ void MainWindow::add_document() {
     for (const Document& document : workspace_.documents()) {
         if (document.id() == documentId.toStdString()) {
             status_label_->setText(title + " is already in the workspace.");
-            return;
+            return false;
         }
     }
 
     QFile file(documentId);
     if (!file.open(QIODevice::ReadOnly)) {
         status_label_->setText("Could not open " + title + ": " + file.errorString());
-        return;
+        return false;
     }
-    const QString text = QString::fromUtf8(file.readAll());
+    const QByteArray bytes = file.readAll();
+    if (file.error() != QFileDevice::NoError) {
+        status_label_->setText("Could not read " + title + ": " + file.errorString());
+        return false;
+    }
+    const QString text = QString::fromUtf8(bytes);
 
     // backend first: adding the list row can select it, which reads workspace_
     workspace_.add_document(
@@ -161,24 +186,103 @@ void MainWindow::add_document() {
     invalidate_corpus();
 
     status_label_->setText("Added " + title + ".");
+    return true;
+}
+
+void MainWindow::remote_add_requested(const QString& path) {
+    add_document_file(path);
 }
 
 void MainWindow::build_corpus() {
-    if (workspace_.documents().empty()) {
+    if (workspace_.documents().empty() || buildJob_ != nullptr) {
         return;
     }
+    startBuild();
+}
 
+void MainWindow::startBuild() {
     try {
-        processing_core_.rebuild(workspace_);
+        auto job = std::make_unique<BuildJob>(workspaceVersion_);
+        job->start(workspace_, buildDelayMs_, coreFactory_);
+        buildJob_ = std::move(job);
     } catch (const std::exception& error) {
+        setCorpusState(CorpusState::Failed);
         status_label_->setText(QString("Build failed: ") + error.what());
         return;
     }
 
-    corpus_current_ = true;
+    processingCore_.reset();
     clear_processing_outputs();
-    workspace_widget_->set_corpus_status(countText(processing_core_.chunk_count(), "chunk"));
+    setCorpusState(CorpusState::Building);
+    status_label_->setText("Building corpus...");
+    pollTimer_->start();
+}
+
+void MainWindow::pollBuild() {
+    if (buildJob_ == nullptr) {
+        pollTimer_->stop();
+        return;
+    }
+    if (buildJob_->isDone()) {
+        finishBuild();
+    }
+}
+
+void MainWindow::finishBuild() {
+    pollTimer_->stop();
+    const std::unique_ptr<BuildJob> job = std::move(buildJob_);
+
+    std::unique_ptr<ProcessingCore> core;
+    try {
+        core = job->takeResult();
+    } catch (const std::exception& error) {
+#ifdef AIWS_FAULT_LOSE_FAILURE
+        return;
+#endif
+        if (job->version() == workspaceVersion_) {
+            setCorpusState(CorpusState::Failed);
+            status_label_->setText(QString("Build failed: ") + error.what());
+        } else {
+            update_action_states();
+        }
+        return;
+    }
+
+    bool isStale = job->version() != workspaceVersion_;
+#ifdef AIWS_FAULT_ACCEPT_STALE
+    isStale = false;
+#endif
+    if (core == nullptr || isStale) {
+        // the workspace changed while this was building, state was already updated then
+        update_action_states();
+        return;
+    }
+
+    processingCore_ = std::move(core);
+    setCorpusState(CorpusState::Current);
     status_label_->setText("Corpus built.");
+}
+
+void MainWindow::setCorpusState(CorpusState state) {
+    corpusState_ = state;
+    switch (state) {
+    case CorpusState::NotBuilt:
+        workspace_widget_->set_corpus_status("Not built");
+        break;
+    case CorpusState::Building:
+        workspace_widget_->set_corpus_status("Building...");
+        break;
+    case CorpusState::Current:
+        workspace_widget_->set_corpus_status(
+            countText(processingCore_->chunk_count(), "chunk"));
+        break;
+    case CorpusState::OutOfDate:
+        workspace_widget_->set_corpus_status("Out of date");
+        break;
+    case CorpusState::Failed:
+        workspace_widget_->set_corpus_status("Build failed");
+        break;
+    }
     update_action_states();
 }
 
@@ -195,13 +299,13 @@ void MainWindow::document_selected(int row) {
 }
 
 void MainWindow::search_requested(const QString& query, int k) {
-    if (!corpus_current_ || query.trimmed().isEmpty()) {
+    if (corpusState_ != CorpusState::Current || query.trimmed().isEmpty()) {
         return;
     }
 
     std::vector<SearchResult> results;
     try {
-        results = processing_core_.search(query.toStdString(), k);
+        results = processingCore_->search(query.toStdString(), k);
     } catch (const std::exception& error) {
         status_label_->setText(QString("Search failed: ") + error.what());
         return;
@@ -221,13 +325,14 @@ void MainWindow::query_changed(const QString&) {
 }
 
 void MainWindow::build_context_requested(int token_budget) {
-    if (!corpus_current_ || !search_widget_->has_query() || token_budget <= 0) {
+    if (corpusState_ != CorpusState::Current || !search_widget_->has_query()
+        || token_budget <= 0) {
         return;
     }
 
     std::vector<ContextItem> items;
     try {
-        items = processing_core_.build_context(search_widget_->query().toStdString(),
+        items = processingCore_->build_context(search_widget_->query().toStdString(),
                                                search_widget_->result_count(),
                                                static_cast<std::size_t>(token_budget));
     } catch (const std::exception& error) {
@@ -255,16 +360,16 @@ void MainWindow::source_document_requested(const QString& document_id) {
 
 void MainWindow::term_inspection_requested(const QString& term,
                                            const QString& chunk_id) {
-    if (!corpus_current_ || term.trimmed().isEmpty()) {
+    if (corpusState_ != CorpusState::Current || term.trimmed().isEmpty()) {
         return;
     }
 
     try {
         const std::string termText = term.toStdString();
-        const std::size_t documentFrequency = processing_core_.document_frequency(termText);
+        const std::size_t documentFrequency = processingCore_->document_frequency(termText);
         const bool hasChunk = !chunk_id.isEmpty();
         const std::size_t chunkFrequency =
-            hasChunk ? processing_core_.term_frequency(termText, chunk_id.toStdString()) : 0;
+            hasChunk ? processingCore_->term_frequency(termText, chunk_id.toStdString()) : 0;
         term_inspector_widget_->set_statistics(documentFrequency, hasChunk, chunkFrequency);
         status_label_->setText("Inspected \"" + term + "\".");
     } catch (const std::invalid_argument&) {
@@ -274,9 +379,13 @@ void MainWindow::term_inspection_requested(const QString& term,
 }
 
 void MainWindow::reset_application() {
+    // a running build keeps going until it notices the cancel, pollBuild drops it later
+    ++workspaceVersion_;
+    if (buildJob_ != nullptr) {
+        buildJob_->cancel();
+    }
     workspace_.clear();
-    processing_core_.rebuild(workspace_);
-    corpus_current_ = false;
+    processingCore_.reset();
 
     const std::array<Resettable*, 4> parts{
         workspace_widget_, search_widget_, term_inspector_widget_, context_widget_};
@@ -284,8 +393,8 @@ void MainWindow::reset_application() {
         part->reset();
     }
 
+    setCorpusState(CorpusState::NotBuilt);
     status_label_->setText("Application reset.");
-    update_action_states();
 }
 
 void MainWindow::exit_application() {
@@ -296,21 +405,28 @@ void MainWindow::exit_application() {
 
 void MainWindow::update_action_states() {
     const bool hasDocuments = !workspace_.documents().empty();
-    const bool canQuery = corpus_current_ && search_widget_->has_query();
+    const bool isCurrent = corpusState_ == CorpusState::Current;
+    const bool canQuery = isCurrent && search_widget_->has_query();
 
-    workspace_widget_->set_build_corpus_enabled(hasDocuments);
+    workspace_widget_->set_build_corpus_enabled(hasDocuments && buildJob_ == nullptr);
     search_widget_->set_search_enabled(canQuery);
     context_widget_->set_build_context_enabled(canQuery);
-    term_inspector_widget_->set_inspection_enabled(corpus_current_);
+    term_inspector_widget_->set_inspection_enabled(isCurrent);
 }
 
 void MainWindow::invalidate_corpus() {
-    if (corpus_current_) {
-        workspace_widget_->set_corpus_status("Out of date");
+    ++workspaceVersion_;
+    if (buildJob_ != nullptr) {
+        buildJob_->cancel();
     }
-    corpus_current_ = false;
+    processingCore_.reset();
     clear_processing_outputs();
-    update_action_states();
+
+    if (corpusState_ == CorpusState::NotBuilt) {
+        update_action_states();
+    } else {
+        setCorpusState(CorpusState::OutOfDate);
+    }
 }
 
 void MainWindow::clear_processing_outputs() {

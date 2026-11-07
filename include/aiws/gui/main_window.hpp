@@ -2,12 +2,17 @@
 
 #include <QMainWindow>
 
+#include "aiws/build_job.hpp"
 #include "aiws/processing_core.hpp"
 #include "aiws/workspace.hpp"
+
+#include <cstdint>
+#include <memory>
 
 class QLabel;
 class QPushButton;
 class QString;
+class QTimer;
 class QWidget;
 
 namespace aiws::gui {
@@ -65,14 +70,22 @@ public:
      */
     void set_build_delay_ms(int ms_per_document);
 
+    // swaps how build cores get made, tests use it to force a failing build
+    void set_core_factory(BuildJob::CoreFactory factory) noexcept;
+
     // Everything below this line is the M3 design. In M4 it is yours to
     // change: add, remove, or redesign private members, slots, and helpers.
 
 private slots:
+    // aiws_send requests land here through a queued call from the ipc thread
+    void remote_add_requested(const QString& path);
+
+    void pollBuild();
+
     /** @brief Handles a request to select and add a document to the workspace. */
     void add_document();
 
-    /** @brief Rebuilds the processing corpus from the current non-empty workspace. */
+    // starts a background build if there are documents and no build thread is alive
     void build_corpus();
 
     /**
@@ -142,9 +155,22 @@ private:
      */
     void clear_processing_outputs();
 
+    enum class CorpusState { NotBuilt, Building, Current, OutOfDate, Failed };
+
+    void startBuild();
+    void finishBuild();
+    void setCorpusState(CorpusState state);
+
     Workspace workspace_;
-    ProcessingCore processing_core_;
-    bool corpus_current_{false};
+    // only non-null while corpusState_ is Current
+    std::unique_ptr<ProcessingCore> processingCore_;
+    CorpusState corpusState_{CorpusState::NotBuilt};
+    // goes up on every add and reset, a build is only kept if it still matches
+    std::uint64_t workspaceVersion_{0};
+    std::unique_ptr<BuildJob> buildJob_;
+    BuildJob::CoreFactory coreFactory_{nullptr};
+    int buildDelayMs_{0};
+    QTimer* pollTimer_{nullptr};
     ExitCallback exit_callback_{nullptr};
 
     WorkspaceWidget* workspace_widget_{nullptr};
