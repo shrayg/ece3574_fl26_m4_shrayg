@@ -1,0 +1,128 @@
+commit 394b5b8be8782f2c0d038876976db3799ae3eea1
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-11-07 16:25:56 -0500
+
+    Write DESIGN.md decision record
+
+ CMakeLists.txt |  2 +-
+ DESIGN.md      | 44 +++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 44 insertions(+), 2 deletions(-)
+
+commit bbf0a59fff8523e6b57262db77641f0484ab6ed9
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-11-07 16:24:29 -0500
+
+    Add student tests for R1-R4, fault switches, and remote add
+
+ CMakeLists.txt          |   4 +
+ tests/student_tests.cpp | 492 +++++++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 494 insertions(+), 2 deletions(-)
+
+commit 62be5ea38f078b60a819d82fded9900b134e21a5
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-11-07 16:15:46 -0500
+
+    CR-1: add aiws_send and a unix socket server thread for remote add
+
+ CMakeLists.txt                         |  16 ++-
+ include/aiws/ipc/remote_add_server.hpp |  46 ++++++++
+ include/aiws/ipc/remote_protocol.hpp   |  61 ++++++++++
+ src/main.cpp                           |  51 ++++++++-
+ src/remote_add_server.cpp              | 197 +++++++++++++++++++++++++++++++++
+ src/remote_protocol.cpp                | 150 +++++++++++++++++++++++++
+ tools/aiws_send.cpp                    | 130 ++++++++++++++++++++++
+ 7 files changed, 649 insertions(+), 2 deletions(-)
+
+commit 2ef7109926730407c27c611420e351d397f0aba8
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-11-07 16:14:43 -0500
+
+    Build corpus on a background thread with BuildJob
+
+ CMakeLists.txt                   |   2 +
+ include/aiws/build_job.hpp       |  43 ++++++++++
+ include/aiws/gui/main_window.hpp |  32 +++++++-
+ src/build_job.cpp                | 100 ++++++++++++++++++++++++
+ src/main.cpp                     |  19 +++++
+ src/main_window.cpp              | 164 +++++++++++++++++++++++++++++++++------
+ src/workspace_widget.cpp         |   1 +
+ 7 files changed, 334 insertions(+), 27 deletions(-)
+
+commit 633cd505eb12cc5903fc58505181b8c398b56833
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-10-28 21:46:09 -0400
+
+    Reword design note
+
+ DESIGN_NOTE.md | 26 ++++++++++++--------------
+ 1 file changed, 12 insertions(+), 14 deletions(-)
+
+commit f26b4f8f82c1ba940ba9e782d87ad541149f6b77
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-10-28 21:43:51 -0400
+
+    Simplify design note formatting
+
+ DESIGN_NOTE.md | 54 ++++++++++++++++++------------------------------------
+ 1 file changed, 18 insertions(+), 36 deletions(-)
+
+commit 969c48a271122c4d04cddba52af5f98b4e0b6cb9
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-10-28 21:42:16 -0400
+
+    Write design note for threaded build
+
+ DESIGN_NOTE.md | 54 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+
+commit 4a32d5bc624822a94efc4aeb49e7b5efec56e310
+Author: shrayg <indoshray@gmail.com>
+Date:   2026-10-28 21:39:53 -0400
+
+    Start M4 from starter and M3 src
+
+ .gitignore                                 |   3 +
+ CMakeLists.txt                             |  57 +++++
+ DESIGN.md                                  |   3 +
+ DESIGN_NOTE.md                             |   3 +
+ STARTER_README.pdf                         | Bin 0 -> 39600 bytes
+ data/public/doc_ai.txt                     |   3 +
+ data/public/doc_retrieval.txt              |   3 +
+ data/public/doc_systems.txt                |   3 +
+ data/public/queries.txt                    |   4 +
+ include/aiws/chunker.hpp                   |  25 +++
+ include/aiws/chunking_strategy.hpp         |  18 ++
+ include/aiws/context_builder.hpp           |  13 ++
+ include/aiws/context_strategy.hpp          |  17 ++
+ include/aiws/corpus_index.hpp              |  36 ++++
+ include/aiws/document.hpp                  |  22 ++
+ include/aiws/gui/context_widget.hpp        |  75 +++++++
+ include/aiws/gui/main_window.hpp           | 159 ++++++++++++++
+ include/aiws/gui/resettable.hpp            |  22 ++
+ include/aiws/gui/search_result_model.hpp   |  84 ++++++++
+ include/aiws/gui/search_widget.hpp         | 105 ++++++++++
+ include/aiws/gui/term_inspector_widget.hpp |  81 ++++++++
+ include/aiws/gui/workspace_widget.hpp      | 101 +++++++++
+ include/aiws/processing_core.hpp           |  53 +++++
+ include/aiws/processing_types.hpp          |  38 ++++
+ include/aiws/retrieval_engine.hpp          |  18 ++
+ include/aiws/retrieval_strategy.hpp        |  20 ++
+ include/aiws/text_processor.hpp            |  29 +++
+ include/aiws/workspace.hpp                 |  19 ++
+ src/chunker.cpp                            |  59 ++++++
+ src/context_builder.cpp                    |  29 +++
+ src/context_widget.cpp                     | 123 +++++++++++
+ src/corpus_index.cpp                       |  72 +++++++
+ src/document.cpp                           |  14 ++
+ src/main.cpp                               |  28 +++
+ src/main_window.cpp                        | 322 +++++++++++++++++++++++++++++
+ src/processing_core.cpp                    | 102 +++++++++
+ src/retrieval_engine.cpp                   |  86 ++++++++
+ src/search_result_model.cpp                | 107 ++++++++++
+ src/search_widget.cpp                      | 185 +++++++++++++++++
+ src/term_inspector_widget.cpp              | 106 ++++++++++
+ src/text_processor.cpp                     | 116 +++++++++++
+ src/workspace.cpp                          |  17 ++
+ src/workspace_widget.cpp                   | 122 +++++++++++
+ tests/student_tests.cpp                    |   2 +
+ 44 files changed, 2504 insertions(+)
