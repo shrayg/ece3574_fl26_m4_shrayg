@@ -30,7 +30,7 @@ Message format, one request per connection. Request: byte 0 = 0x41, bytes 1 to 4
 
 Partner: Subhan Hassan
 
-Session 1: Nov 8, 9:30 pm to 10:15 pm, on Subhan's code. We walked through his background build worker and `MainWindow::build_finished()` (the workspace version check), then `RemoteAddServer::handle_client()` and the message format. Session 1 roles: he drove 9:30 to 9:52, I drove 9:52 to 10:15.
+Session 1: Nov 8, 9:30 pm to 10:15 pm, on Subhan's code. We walked through `CorpusBuilder::run()` and `MainWindow::build_finished()` (the workspace version check), then `RemoteAddServer::handle_client()` and the message format. Session 1 roles: he drove 9:30 to 9:52, I drove 9:52 to 10:15.
 
 Session 2: Nov 8, 10:15 pm to 11:00 pm, on my code. We reviewed `BuildJob`, `runBuild()`, `MainWindow::finishBuild()` and the fault switches, and why `RemoteAddServer` is declared after `MainWindow` in `main.cpp`. Session 2 roles: I drove 10:15 to 10:37, he drove 10:37 to 11:00.
 
