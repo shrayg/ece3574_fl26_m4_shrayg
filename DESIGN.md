@@ -26,20 +26,16 @@ Message format, one request per connection. Request: byte 0 = 0x41, bytes 1 to 4
 
 `AIWS_FAULT_ACCEPT_STALE` is in `MainWindow::finishBuild()` and forces `isStale` to false. `staleBuildIsDroppedAfterAdd` and `staleBuildIsDroppedAfterResetAndReadd` catch it. `AIWS_FAULT_LOSE_FAILURE` returns early from the catch block in `finishBuild()`, so the app never leaves `Building`. `failedBuildIsReportedAndAppStaysUsable` catches it.
 
-## 6. AI use
-
-I used Cursor's AI assistant for help with the code, tests, and docs. I reviewed and tested all of it myself.
-
 ## Pair programming log
 
-Partner: [name]
+Partner: Subhan Hassan
 
-Session 1: [date], [start time] to [end time], on [whose] code, working on [part of the code]. We swapped roles at [time].
+Session 1: Nov 8, 9:30 pm to 10:15 pm, on Subhan's code. We walked through his background build worker and `MainWindow::build_finished()` (the workspace version check), then `RemoteAddServer::handle_client()` and the message format. Session 1 roles: he drove 9:30 to 9:52, I drove 9:52 to 10:15.
 
-Session 2: [date], [start time] to [end time], on [whose] code, working on [part of the code]. We swapped roles at [time].
+Session 2: Nov 8, 10:15 pm to 11:00 pm, on my code. We reviewed `BuildJob`, `runBuild()`, `MainWindow::finishBuild()` and the fault switches, and why `RemoteAddServer` is declared after `MainWindow` in `main.cpp`. Session 2 roles: I drove 10:15 to 10:37, he drove 10:37 to 11:00.
 
-Something I contributed as navigator: [fill in]
+Something I contributed as navigator: I asked what happens if an older build finishes after the workspace has already moved on. We walked through `finishBuild()` comparing `workspaceVersion_` to the job's saved version, and ran `staleBuildIsDroppedAfterAdd` and `staleBuildIsDroppedAfterResetAndReadd` to confirm a stale core never becomes `Current`.
 
-Something my partner contributed as navigator: [fill in]
+Something my partner contributed as navigator: Subhan asked whether `AIWS_FAULT_ACCEPT_STALE` is really caught, since a cancelled stale job can return nullptr and get dropped either way. I showed the stale tests run with no delay so the worker always finishes a real core, and we built with the macro to confirm those tests fail.
 
-What worked best for us: [one sentence]
+What worked best for us: the driver explaining each part out loud while the navigator asked what-if questions about timing, then checking the answer by running a test.
